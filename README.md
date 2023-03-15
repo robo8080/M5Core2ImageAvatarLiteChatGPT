@@ -6,7 +6,7 @@
 
 ---
 
-### 【暫定版です】　###
+### 【暫定版です】 ###
 
 mongonta0716さんの ｽﾀｯｸﾁｬﾝ ファームウェア”M5Core2ImageAvatarLite”「ChatGPT API搭載AIｽﾀｯｸﾁｬﾝ」にしました(Core2のみ）。<br>
 オリジナルはこちらです。<br>
