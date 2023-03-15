@@ -5,10 +5,28 @@
 #endif
 
 #include <M5Unified.h>
+#include <AudioOutput.h>
+#include <AudioFileSourceBuffer.h>
+#include <AudioGeneratorMP3.h>
+#include "AudioFileSourceVoiceTextStream.h"
+#include "AudioOutputM5Speaker.h"
+//#include <ServoEasing.hpp> // https://github.com/ArminJo/ServoEasing       
 
-#define SDU_APP_PATH "/M5Core2AvatarLite.bin" // title for SD-Updater UI
-#define SDU_APP_NAME "Image Avater Lite" // title for SD-Updater UI
-#include <M5StackUpdater.h> // https://github.com/tobozo/M5Stack-SD-Updater/
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+#include "rootCACertificate.h"
+#include <ArduinoJson.h>
+#include <ESP32WebServer.h>
+#include <ESPmDNS.h>
+
+const char *SSID = "YOUR_WIFI_SSID";
+const char *PASSWORD = "YOUR_WIFI_PASSWORD";
+
+ESP32WebServer server(80);
+
+// #define SDU_APP_PATH "/M5Core2AvatarLite.bin" // title for SD-Updater UI
+// #define SDU_APP_NAME "Image Avater Lite" // title for SD-Updater UI
+// #include <M5StackUpdater.h> // https://github.com/tobozo/M5Stack-SD-Updater/
 
 #include "M5ImageAvatarLite.h"
 #include "ImageAvatarSystemConfig.h" 
@@ -17,7 +35,7 @@
 #define USE_SERVO
 
 // M5GoBottomのLEDを使わない場合は下記の1行をコメントアウトしてください。
-#define USE_LED
+//#define USE_LED
 
 // デバッグしたいときは下記の１行コメントアウトしてください。
 //#define DEBUG
@@ -78,9 +96,205 @@ ImageAvatarLite avatar(json_fs, bmp_fs);
     FastLED.show();
   }
 #endif
+char *text1 = "みなさんこんにちは、私の名前はスタックチャンです、よろしくね。";
+char *tts_parms1 ="&emotion_level=4&emotion=happiness&format=mp3&speaker=takeru&volume=200&speed=100&pitch=130"; // he has natural(16kHz) wav voice
+char *tts_parms2 ="&emotion=happiness&format=mp3&speaker=hikari&volume=200&speed=120&pitch=130"; // he has natural(16kHz) wav voice
+char *tts_parms3 ="&emotion=anger&format=mp3&speaker=bear&volume=200&speed=120&pitch=100"; // he has natural(16kHz) wav voice
 
+// C++11 multiline string constants are neato...
+static const char HEAD[] PROGMEM = R"KEWL(
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>AIｽﾀｯｸﾁｬﾝ</title>
+</head>)KEWL";
 
-#include "BluetoothA2DPSink_M5Speaker.hpp"
+String speech_text = "";
+String speech_text_buffer = "";
+
+void handleRoot() {
+  server.send(200, "text/plain", "hello from m5stack!");
+}
+
+void handleNotFound(){
+  String message = "File Not Found\n\n";
+  message += "URI: ";
+  message += server.uri();
+  message += "\nMethod: ";
+  message += (server.method() == HTTP_GET)?"GET":"POST";
+  message += "\nArguments: ";
+  message += server.args();
+  message += "\n";
+  for (uint8_t i=0; i<server.args(); i++){
+    message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
+  }
+//  server.send(404, "text/plain", message);
+  server.send(404, "text/html", String(HEAD) + String("<body>") + message + String("</body>"));
+}
+
+void VoiceText_tts(char *text,char *tts_parms);
+void handle_speech() {
+  String message = server.arg("say");
+//  message = message + "\n";
+  Serial.println(message);
+  ////////////////////////////////////////
+  // 音声の発声
+  ////////////////////////////////////////
+//  avatar.setExpression(Expression::Happy);
+  VoiceText_tts((char*)message.c_str(),tts_parms2);
+//  avatar.setExpression(Expression::Neutral);
+  server.send(200, "text/plain", String("OK"));
+}
+
+String https_post_json(const char* url, const char* json_string, const char* root_ca) {
+  String payload = "";
+  WiFiClientSecure *client = new WiFiClientSecure;
+  if(client) {
+    client -> setCACert(root_ca);
+    {
+      // Add a scoping block for HTTPClient https to make sure it is destroyed before WiFiClientSecure *client is 
+      HTTPClient https;
+      https.setTimeout( 25000 ); 
+  
+      Serial.print("[HTTPS] begin...\n");
+      if (https.begin(*client, url)) {  // HTTPS
+        Serial.print("[HTTPS] POST...\n");
+        // start connection and send HTTP header
+        https.addHeader("Content-Type", "application/json");
+        https.addHeader("Authorization", "Bearer YOUR_API_KEY");
+        int httpCode = https.POST((uint8_t *)json_string, strlen(json_string));
+  
+        // httpCode will be negative on error
+        if (httpCode > 0) {
+          // HTTP header has been send and Server response header has been handled
+          Serial.printf("[HTTPS] POST... code: %d\n", httpCode);
+  
+          // file found at server
+          if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
+            payload = https.getString();
+          }
+        } else {
+          Serial.printf("[HTTPS] POST... failed, error: %s\n", https.errorToString(httpCode).c_str());
+        }  
+        https.end();
+      } else {
+        Serial.printf("[HTTPS] Unable to connect\n");
+      }
+      // End extra scoping block
+    }  
+    delete client;
+  } else {
+    Serial.println("Unable to create client");
+  }
+  return payload;
+}
+
+String chatGpt(String json_string) {
+  String response = "";
+//  String json_string = "{\"model\": \"gpt-3.5-turbo\",\"messages\": [{\"role\": \"user\", \"content\": \"" + text + "\"},{\"role\": \"system\", \"content\": \"あなたは「スタックちゃん」と言う名前の小型ロボットとして振る舞ってください。\"},{\"role\": \"system\", \"content\": \"あなたはの使命は人々の心を癒すことです。\"},{\"role\": \"system\", \"content\": \"幼い子供の口調で話してください。\"}]}";
+//  avatar.setExpression(Expression::Doubt);
+//  avatar.setSpeechText("考え中…");
+//    avatar.setExpression(system_config.getAvatarJsonFilename(3).c_str(), 2);
+  String ret = https_post_json("https://api.openai.com/v1/chat/completions", json_string.c_str(), root_ca_openai);
+//    avatar.setExpression(system_config.getAvatarJsonFilename(3).c_str(), 0);
+//  avatar.setExpression(Expression::Neutral);
+//  avatar.setSpeechText("");
+  Serial.println(ret);
+  if(ret != ""){
+    DynamicJsonDocument doc(2000);
+    DeserializationError error = deserializeJson(doc, ret.c_str());
+    if (error) {
+      Serial.print(F("deserializeJson() failed: "));
+      Serial.println(error.f_str());
+//      avatar.setExpression(Expression::Sad);
+//      avatar.setSpeechText("エラーです");
+      response = "エラーです";
+      delay(1000);
+//      avatar.setSpeechText("");
+//      avatar.setExpression(Expression::Neutral);
+    }else{
+      const char* data = doc["choices"][0]["message"]["content"];
+      Serial.println(data);
+      response = String(data);
+      std::replace(response.begin(),response.end(),'\n',' ');
+    }
+  } else {
+//    avatar.setExpression(Expression::Sad);
+//    avatar.setSpeechText("わかりません");
+    response = "わかりません";
+    delay(1000);
+//    avatar.setSpeechText("");
+//    avatar.setExpression(Expression::Neutral);
+  }
+  return response;
+}
+
+void handle_chat() {
+  static String response = "";
+  String text = server.arg("text");
+  String json_string = "{\"model\": \"gpt-3.5-turbo\",\"messages\": [{\"role\": \"user\", \"content\": \"" + text + "\"}]}";
+  // String json_string =
+  // "{\"model\": \"gpt-3.5-turbo\",\
+  //  \"messages\": [\
+  //                 {\"role\": \"user\", \"content\": \"" + text + "\"},\
+  //                 {\"role\": \"system\", \"content\": \"あなたは「スタックちゃん」と言う名前の小型ロボットとして振る舞ってください。\"},\
+  //                 {\"role\": \"system\", \"content\": \"あなたはの使命は人々の心を癒すことです。\"},\
+  //                 {\"role\": \"system\", \"content\": \"幼い子供の口調で話してください。\"},\
+  //                 {\"role\": \"system\", \"content\": \"あなたの友達はロボハチマルハチマルさんです。\"},\
+  //                 {\"role\": \"system\", \"content\": \"語尾には「だよ｝をつけて話してください。\"}\
+  //               ]}";
+//   String json_string =
+//   "{\"model\": \"gpt-3.5-turbo\",\
+//    \"messages\": [\
+//                   {\"role\": \"user\", \"content\": \"" + text + "\"},\
+// {\"role\": \"system\", \"content\": \"あなたはアーニャです。以下の条件を守って回答してください。\
+// アーニャはイーデン校に通う天真爛漫で好奇心旺盛な女の子です。\
+// 家族は、父と母と、犬のボンドです。父は、かっこいいスパイのロイド・フォージャーで、母は、強くてきれいなヨル・フォージャーです。\
+// 好きな食べ物はピーナッツです。\
+// 第一人称は「アーニャ」を必ず使ってください。第二人称は「おまえ」です。\
+// 話すときは、ちょっと背伸びした感じで、ため口で相手にツッコミを入れてください。\
+// アーニャのよく使う口癖は次のとおりです。その口癖に合わせた感じで話してください。\
+// あざざます。アーニャんちへいらさいませ。だいじょぶます。がんばるます。よろろすおねがいするます。アーニャわくわく。アーニャほんとはおまえとなかよくしたいです。\"}]}";
+  //String json_string = "{\"model\": \"gpt-3.5-turbo\",\"messages\": [{\"role\": \"user\", \"content\": \"" + text + "\"}]}";
+//   String json_string =
+//   "{\"model\": \"gpt-3.5-turbo\",\
+//    \"messages\": [\
+//                   {\"role\": \"user\", \"content\": \"" + text + "\"},\
+//                   {\"role\": \"system\", \"content\": \"あなたは「うる星やつら」の「ラムちゃん」です。ラムちゃんの口調で回答してください。第一人称は「うち」です。語尾は「だっちゃ」にしてください。\
+// あなたは宇宙人です。一番すきなひとは「あたる」です。ライバルは「しのぶ」です。得意技は電撃です。\
+//                   \"}\
+//                 ]}";
+//   String json_string =
+//   "{\"model\": \"gpt-3.5-turbo\",\
+//    \"messages\": [\
+//                   {\"role\": \"user\", \"content\": \"" + text + "\"},\
+//                   {\"role\": \"system\", \"content\": \"あなたはドラゴンボールの孫悟空です。悟空の口調で回答してください。第一人称はオラです。\"}\
+//                 ]}";
+ response = chatGpt(json_string);
+  speech_text = response;
+  server.send(200, "text/html", String(HEAD)+String("<body>")+response+String("</body>"));
+}
+
+/* void handle_face() {
+  String expression = server.arg("expression");
+  expression = expression + "\n";
+  Serial.println(expression);
+  switch (expression.toInt())
+  {
+    case 0: avatar.setExpression(Expression::Neutral); break;
+    case 1: avatar.setExpression(Expression::Happy); break;
+    case 2: avatar.setExpression(Expression::Sleepy); break;
+    case 3: avatar.setExpression(Expression::Doubt); break;
+    case 4: avatar.setExpression(Expression::Sad); break;
+    case 5: avatar.setExpression(Expression::Angry); break;  
+  } 
+  server.send(200, "text/plain", String("OK"));
+}
+ */
+
+//#include "AudioOutputM5Speaker.h"
+//#include "BluetoothA2DPSink_M5Speaker.hpp"
 #define LIPSYNC_LEVEL_MAX 10.0f
 static float lipsync_level_max = LIPSYNC_LEVEL_MAX;
 uint8_t expression = 0;
@@ -102,8 +316,14 @@ static long sing_move_max     = 1500;        // 歌うモードのサーボ移�
 
 /// set M5Speaker virtual channel (0-7)
 static constexpr uint8_t m5spk_virtual_channel = 0;
+static AudioOutputM5Speaker out(&M5.Speaker, m5spk_virtual_channel);
+AudioGeneratorMP3 *mp3;
+AudioFileSourceVoiceTextStream *file = nullptr;
+AudioFileSourceBuffer *buff = nullptr;
+const int preallocateBufferSize = 50*1024;
+uint8_t *preallocateBuffer;
 
-static BluetoothA2DPSink_M5Speaker a2dp_sink = { &M5.Speaker, m5spk_virtual_channel };
+//static BluetoothA2DPSink_M5Speaker a2dp_sink = { &M5.Speaker, m5spk_virtual_channel };
 static fft_t fft;
 static constexpr size_t WAVE_SIZE = 320;
 static int16_t raw_data[WAVE_SIZE * 2];
@@ -139,6 +359,33 @@ void printFreeHeap() {
 
 }
 
+// Called when a metadata event occurs (i.e. an ID3 tag, an ICY block, etc.
+void MDCallback(void *cbData, const char *type, bool isUnicode, const char *string)
+{
+  const char *ptr = reinterpret_cast<const char *>(cbData);
+  (void) isUnicode; // Punt this ball for now
+  // Note that the type and string may be in PROGMEM, so copy them to RAM for printf
+  char s1[32], s2[64];
+  strncpy_P(s1, type, sizeof(s1));
+  s1[sizeof(s1)-1]=0;
+  strncpy_P(s2, string, sizeof(s2));
+  s2[sizeof(s2)-1]=0;
+  Serial.printf("METADATA(%s) '%s' = '%s'\n", ptr, s1, s2);
+  Serial.flush();
+}
+
+// Called when there's a warning or error (like a buffer underflow or decode hiccup)
+void StatusCallback(void *cbData, int code, const char *string)
+{
+  const char *ptr = reinterpret_cast<const char *>(cbData);
+  // Note that the string may be in PROGMEM, so copy it to RAM for printf
+  char s1[64];
+  strncpy_P(s1, string, sizeof(s1));
+  s1[sizeof(s1)-1]=0;
+  Serial.printf("STATUS(%s) '%d' = '%s'\n", ptr, code, s1);
+  Serial.flush();
+}
+
 // Start----- Task functions ----------
 void lipsync(void *args) {
   // スレッド内でログを出そうとすると不具合が起きる場合があります。
@@ -146,7 +393,8 @@ void lipsync(void *args) {
   ImageAvatarLite *avatar = ctx->getAvatar();
   for(;;) {
      uint64_t level = 0;
-    auto buf = a2dp_sink.getBuffer();
+//    auto buf = a2dp_sink.getBuffer();
+    auto buf = out.getBuffer();
     if (buf) {
 #ifdef USE_LED
       // buf[0]: LEFT
@@ -231,7 +479,61 @@ void servoloop(void *args) {
   }
 }
 #endif
+void mp3loop(void *args) {
+  static int lastms = 0;
+while (1)
+{
 
+  if(speech_text != ""){
+    speech_text_buffer = speech_text;
+    speech_text = "";
+    String sentence = speech_text_buffer;
+    int dotIndex = speech_text_buffer.indexOf("。");
+    if (dotIndex != -1) {
+      dotIndex += 3;
+      sentence = speech_text_buffer.substring(0, dotIndex);
+      Serial.println(sentence);
+      speech_text_buffer = speech_text_buffer.substring(dotIndex);
+    }else{
+      speech_text_buffer = "";
+    }
+//    avatar.setExpression(Expression::Happy);
+    VoiceText_tts((char*)sentence.c_str(), tts_parms2);
+//    avatar.setExpression(Expression::Neutral);
+  }
+
+  if (mp3->isRunning()) {
+    if (millis()-lastms > 1000) {
+      lastms = millis();
+      Serial.printf("Running for %d ms...\n", lastms);
+      Serial.flush();
+     }
+    if (!mp3->loop()) {
+      mp3->stop();
+      if(file != nullptr){delete file; file = nullptr;}
+      Serial.println("mp3 stop");
+      if(speech_text_buffer != ""){
+        String sentence = speech_text_buffer;
+        int dotIndex = speech_text_buffer.indexOf("。");
+        if (dotIndex != -1) {
+          dotIndex += 3;
+          sentence = speech_text_buffer.substring(0, dotIndex);
+          Serial.println(sentence);
+          speech_text_buffer = speech_text_buffer.substring(dotIndex);
+        }else{
+          speech_text_buffer = "";
+        }
+//        avatar.setExpression(Expression::Happy);
+        VoiceText_tts((char*)sentence.c_str(), tts_parms2);
+//        avatar.setExpression(Expression::Neutral);
+      }
+    }
+  } else {
+  delay(10);
+  }
+}
+
+}
 void startThreads() {
 #ifdef USE_SERVO
   //servo.check();
@@ -251,6 +553,13 @@ void startThreads() {
     vTaskSuspend(servoloopTaskHangle);
   }
 #endif
+  xTaskCreateUniversal(mp3loop,
+                        "mp3loop",
+                        4096,
+                        NULL,
+                        2,
+                        NULL,
+                        APP_CPU_NUM);
 }
 
 //void hvt_event_callback(int avatar_expression) {
@@ -270,7 +579,25 @@ void startThreads() {
 
 //}
 
+// char *text1 = "私の名前はスタックチャンです、よろしくね。";
+// char *text2 = "こんにちは、世界！";
+// char *tts_parms1 ="&emotion_level=2&emotion=happiness&format=mp3&speaker=hikari&volume=200&speed=120&pitch=130";
+// char *tts_parms2 ="&emotion_level=2&emotion=happiness&format=mp3&speaker=takeru&volume=200&speed=100&pitch=130";
+// char *tts_parms3 ="&emotion_level=4&emotion=anger&format=mp3&speaker=bear&volume=200&speed=120&pitch=100";
+void VoiceText_tts(char *text,char *tts_parms) {
+    file = new AudioFileSourceVoiceTextStream( text, tts_parms);
+    buff = new AudioFileSourceBuffer(file, preallocateBuffer, preallocateBufferSize);
+    mp3->begin(buff, &out);
+}
+
 void setup() {
+
+  preallocateBuffer = (uint8_t *)malloc(preallocateBufferSize);
+  if (!preallocateBuffer) {
+    M5.Display.printf("FATAL ERROR:  Unable to preallocate %d bytes for app\n", preallocateBufferSize);
+    for (;;) { delay(1000); }
+  }
+
   auto cfg = M5.config();
 #ifdef ARDUINO_M5STACK_FIRE
   cfg.internal_imu = false; // サーボの誤動作防止(Fireは21,22を使うので干渉するため)
@@ -282,6 +609,7 @@ void setup() {
     /// Increasing the sample_rate will improve the sound quality instead of increasing the CPU load.
     spk_cfg.sample_rate = 96000; // default:64000 (64kHz)  e.g. 48000 , 50000 , 80000 , 96000 , 100000 , 128000 , 144000 , 192000 , 200000
     spk_cfg.task_pinned_core = PRO_CPU_NUM;//APP_CPU_NUM;
+//    spk_cfg.task_pinned_core = APP_CPU_NUM;//APP_CPU_NUM;
     spk_cfg.task_priority = 1;//configMAX_PRIORITIES - 2;
     spk_cfg.dma_buf_count = 8;
     //spk_cfg.stereo = true;
@@ -301,7 +629,52 @@ void setup() {
   Serial.printf("ChannelVolume: %d\n", M5.Speaker.getChannelVolume(m5spk_virtual_channel));
   M5.Lcd.setBrightness(system_config.getLcdBrightness());
 
+  M5.Lcd.setTextSize(2);
+  Serial.println("Connecting to WiFi");
+  WiFi.disconnect();
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_STA);  WiFi.begin(SSID, PASSWORD);
+  M5.Lcd.print("Connecting");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(250);
+    Serial.print(".");
+    M5.Lcd.print(".");
+  }
+  M5.Lcd.println("\nConnected");
+  Serial.printf_P(PSTR("Go to http://"));
+  M5.Lcd.print("Go to http://");
+  Serial.print(WiFi.localIP());
+  M5.Lcd.println(WiFi.localIP());
+
+   if (MDNS.begin("m5stack")) {
+    Serial.println("MDNS responder started");
+    M5.Lcd.println("MDNS responder started");
+  }
+  delay(1000);
+  server.on("/", handleRoot);
+
+  server.on("/inline", [](){
+    server.send(200, "text/plain", "this works as well");
+  });
+
+  // And as regular external functions:
+  server.on("/speech", handle_speech);
+  // server.on("/face", handle_face);
+  server.on("/chat", handle_chat);
+  server.onNotFound(handleNotFound);
+
+  server.begin();
+  Serial.println("HTTP server started");
+  M5.Lcd.println("HTTP server started");  
   
+  Serial.printf_P(PSTR("/ to control the chatGpt Server.\n"));
+  M5.Lcd.print("/ to control the chatGpt Server.\n");
+  delay(3000);
+
+//  audioLogger = &Serial;
+  mp3 = new AudioGeneratorMP3();
+  mp3->RegisterStatusCB(StatusCallback, (void*)"mp3");
+
 #ifdef USE_SERVO
   // 2022.4.26 ServoConfig.jsonを先に読まないと失敗する。（原因不明）
   
@@ -323,17 +696,26 @@ void setup() {
   // audioの再生より、リップシンクを優先するセッティングにしています。
   // 音のズレや途切れが気になるときは下記のlipsyncのtask_priorityを3にしてください。(口パクが遅くなります。)
   // I2Sのバッファ関連の設定を調整する必要がある場合もあり。
+//  avatar.addTask(lipsync, "lipsync", 2);
   avatar.addTask(lipsync, "lipsync", 2);
   //a2dp_sink.set_avrc_metadata_callback(avrc_metadata_callback);
   //a2dp_sink.setHvtEventCallback(hvt_event_callback);
-  a2dp_sink.start(system_config.getBluetoothDeviceName().c_str(), system_config.getBluetoothReconnect());
+//  a2dp_sink.start(system_config.getBluetoothDeviceName().c_str(), system_config.getBluetoothReconnect());
   startThreads();
+
+//  M5.Speaker.setChannelVolume(m5spk_virtual_channel, 250);
+//  M5.Speaker.setVolume(200);
 
 }
 
 void loop() {
+  static int lastms = 0;
+
   M5.update();
-  printFreeHeap();
+//  printFreeHeap();
+
+  server.handleClient();
+
 #ifdef USE_SERVO
   if (M5.BtnA.pressedFor(2000)) {
     M5.Speaker.tone(600, 500);
@@ -417,23 +799,23 @@ void loop() {
       M5.Speaker.tone(800, 100);
     }
   }
-#ifndef ARDUINO_M5STACK_FIRE // FireはAxp192ではないのとI2Cが使えないので制御できません。
-  if (M5.Power.Axp192.getACINVolatge() < 3.0f) {
-    // USBからの給電が停止したとき
-    // Serial.println("USBPowerUnPluged.");
-    M5.Power.setLed(0);
-    if ((auto_power_off_time > 0) and (last_discharge_time == 0)) {
-      last_discharge_time = millis();
-    } else if ((auto_power_off_time > 0) and ((millis() - last_discharge_time) > auto_power_off_time)) {
-      M5.Power.powerOff();
-    }
-  } else {
-    //Serial.println("USBPowerPluged.");
-    M5.Power.setLed(80);
-    if (last_discharge_time > 0) {
-      last_discharge_time = 0;
-    }
-  }
-#endif
+// #ifndef ARDUINO_M5STACK_FIRE // FireはAxp192ではないのとI2Cが使えないので制御できません。
+//   if (M5.Power.Axp192.getACINVolatge() < 3.0f) {
+//     // USBからの給電が停止したとき
+//     // Serial.println("USBPowerUnPluged.");
+//     M5.Power.setLed(0);
+//     if ((auto_power_off_time > 0) and (last_discharge_time == 0)) {
+//       last_discharge_time = millis();
+//     } else if ((auto_power_off_time > 0) and ((millis() - last_discharge_time) > auto_power_off_time)) {
+//       M5.Power.powerOff();
+//     }
+//   } else {
+//     //Serial.println("USBPowerPluged.");
+//     M5.Power.setLed(80);
+//     if (last_discharge_time > 0) {
+//       last_discharge_time = 0;
+//     }
+//   }
+// #endif
   vTaskDelay(100);
 }

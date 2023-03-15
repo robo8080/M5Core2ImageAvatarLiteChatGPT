@@ -1,5 +1,84 @@
-# M5Core2ImageAvatarLite
- ImageAvatarLite for M5Stack Core2 and M5Stack Fire
+# M5Core2ImageAvatarLiteChatGPT
+ ImageAvatarLiteChatGPT for M5Stack Core2
+
+
+---
+
+---
+
+### 【暫定版です】　###
+
+mongonta0716さんの ｽﾀｯｸﾁｬﾝ ファームウェア”M5Core2ImageAvatarLite”「ChatGPT API搭載AIｽﾀｯｸﾁｬﾝ」にしました(Core2のみ）。<br>
+オリジナルはこちらです。<br>
+<https://github.com/mongonta0716/M5Core2ImageAvatarLite><br>
+
+---
+
+### プログラムをビルドするのに必要な物 ###
+* [M5Stack Core2](http://www.m5stack.com/ "Title")<br>
+* VSCode<br>
+* PlatformIO<br>
+
+使用しているライブラリ等は"platformio.ini"を参照してください。<br>
+
+
+### WiFiの設定 ###
+* main.cppの22行目付近、SSIDとPASSWORDを設定してください。
+
+
+### ChatGPTのAPIキーの設定 ###
+
+ChatGPTのAPIキー取得方法は以下の通りです。(詳細はこのページ一番下のリンクを参照してください。)
+
+* [OpenAIのウェブサイト](https://openai.com/ "Title")にアクセスして、アカウントを作成します。メールアドレスと携帯電話番号が必要です。
+* アカウント作成後、APIキーを発行します。APIキーは有料ですが、無料期間やクレジットがあります。
+* APIキーを取得したら、main.cppの165行目付近、YOUR_API_KEYを設定してください。<br>
+![画像4](images/image4.png)<br><br>
+
+
+### VoiceText Wev API api キーの設定 ###
+* AudioFileSourceVoiceTextStream.cppの30行目付近、YOUR_TSS_API_KEYを設定してください。<br>
+APIキーは、[ここ](https://cloud.voicetext.jp/webapi/ "Title")の「無料利用登録」から申請すれば、メールで送られて来ます。<br>
+* TTSのパラメータの詳細はこちらを参照してください。<br>
+[VoiceText Web API [API マニュアル](https://cloud.voicetext.jp/webapi/docs/api/ "Title")]
+<br><br>
+
+---
+
+### 使い方 ###
+
+* 音声認識プログラムは別途ユーザーが用意する必要があります。<br>
+音声認識プログラムからこのようにhttpコマンドでテキスト(UTF-8)を渡します。<br>
+(テキストはURLエンコードして渡してください。)<br><br>
+http://XXX.XXX.XXX.XXX/chat?text=こんにちは<br><br>
+XXX.XXX.XXX.XXXの部分は起動時に表示されるM5StackのIPアドレスに置き換えてください。<br><br>
+* 上記と同様にしてブラウザを使ってアクセスすることも出来ます。<br><br>
+![画像2](images/image2.png)<br>
+
+* 私は音声認識にiPhoneのショートカット機能を使っています。<br>
+このように簡単に音声認識が使えます。<br><br>
+![画像3](images/image3.png)<br>
+
+* main.cppの236行目付近、を修正するとAIのキャラクターを設定出来ます。<br>
+
+* 【注意】会話の履歴を保存する機能はありません。
+
+---
+
+### ChatGPTのAPIキー取得の参考リンク ###
+
+* [ChatGPT API利用方法の簡単解説](https://qiita.com/mikito/items/b69f38c54b362c20e9e6/ "Title")<br>
+
+### ChatGPTのキャラクター設定の参考リンク ###
+
+* [ChatGPTのAPIでキャラクター設定を試してみた](https://note.com/it_navi/n/nf5f702b36a75#8e42f887-fb07-4367-9f3f-ab7f119eb064/ "Title")<br>
+<br><br>
+
+
+---
+
+---
+
 
 # 概要
 
@@ -13,8 +92,8 @@
 srcフォルダとmain.cppの名前を揃えて変更してください。
 
 ### 変更例
-src -> M5Core2ImageAvatarLite<br>
-main.cpp -> M5Core2ImageAvatarLite.ino
+src -> M5Core2ImageAvatarLiteChatGPT<br>
+main.cpp -> M5Core2ImageAvatarLiteChatGPT.ino
 
 # 必要なライブラリ
 <b>Arduino-esp32はVer.2.0.3で動作確認しています。</b>
@@ -31,8 +110,8 @@ main.cpp -> M5Core2ImageAvatarLite.ino
 - [FastLED](https://github.com/FastLED/FastLED)
 
 # 対応機種
- メモリの都合上PSRAMが必要なのでM5Stack Core2とM5Stack Fireのみを対象にしています。
- 4bitBMPを使用し、カラーパレットを使用することにより他の機種でも動きますが手順が複雑なのでCore2及びFireのみとします。
+ メモリの都合上PSRAMが必要なのでM5Stack Core2と~~M5Stack Fire~~のみを対象にしています。
+ 4bitBMPを使用し、カラーパレットを使用することにより他の機種でも動きますが手順が複雑なのでCore2~~及びFire~~のみとします。
 
 # 使い方
 1. SDカードのルートにdataにあるフォルダ(bmp,json)をコピー
