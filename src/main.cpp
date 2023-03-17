@@ -196,7 +196,10 @@ String chatGpt(String json_string) {
 //  avatar.setExpression(Expression::Doubt);
 //  avatar.setSpeechText("考え中…");
 //    avatar.setExpression(system_config.getAvatarJsonFilename(3).c_str(), 2);
+  VoiceText_tts("考え中！",tts_parms2);
   String ret = https_post_json("https://api.openai.com/v1/chat/completions", json_string.c_str(), root_ca_openai);
+  VoiceText_tts("分かった！",tts_parms2);
+  delay(1000);
 //    avatar.setExpression(system_config.getAvatarJsonFilename(3).c_str(), 0);
 //  avatar.setExpression(Expression::Neutral);
 //  avatar.setSpeechText("");
@@ -817,5 +820,5 @@ void loop() {
 //     }
 //   }
 // #endif
-  vTaskDelay(100);
+//  vTaskDelay(100);
 }
