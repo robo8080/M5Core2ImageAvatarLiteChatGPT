@@ -119,7 +119,7 @@ main.cpp -> M5Core2ImageAvatarLiteChatGPT.ino
     - M5AvatarLiteSystem.json
     - M5AvatarLiteServo.json
 1. プログラムを書き込むとAvatarが起動します。
-1. Bluetoothスピーカーとして機能します。「ESP32」というデバイスをペアリングすると音を再生可能です。
+1. ~~Bluetoothスピーカーとして機能します。「ESP32」というデバイスをペアリングすると音を再生可能です。~~
 
 ## ボタン操作
 
