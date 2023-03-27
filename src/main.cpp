@@ -435,7 +435,7 @@ void lipsync(void *args) {
       mouth_ratio = 1.2f;
     }
     avatar->setMouthOpen(mouth_ratio);
-    vTaskDelay(1/portTICK_PERIOD_MS);
+    vTaskDelay(10/portTICK_PERIOD_MS);
   }   
 }
 
